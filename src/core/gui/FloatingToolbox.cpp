@@ -16,13 +16,16 @@
 #include "ToolbarDefinitions.h"  // for ToolbarEntryDefintion
 
 
-FloatingToolbox::FloatingToolbox(MainWindow* theMainWindow, GtkOverlay* overlay) {
-    this->mainWindow = theMainWindow;
-    this->floatingToolbox = theMainWindow->get("floatingToolbox");
-    this->floatingToolboxX = 200;
-    this->floatingToolboxY = 200;
-    this->floatingToolboxState = recalcSize;
-
+FloatingToolbox::FloatingToolbox(MainWindow* theMainWindow, GtkOverlay* overlay)
+        :
+        mainWindow(theMainWindow),
+        floatingToolbox(theMainWindow->get("floatingToolbox")),
+        overlay(overlay, xoj::util::ref),
+        boxContents(theMainWindow->get("boxContents")),
+        floatingToolboxX(200),
+        floatingToolboxY(200),
+        floatingToolboxState(recalcSize)
+{
     gtk_overlay_add_overlay(overlay, this->floatingToolbox);
     gtk_overlay_set_overlay_pass_through(overlay, this->floatingToolbox, true);
     gtk_widget_add_events(this->floatingToolbox, GDK_LEAVE_NOTIFY_MASK);
@@ -36,8 +39,11 @@ FloatingToolbox::~FloatingToolbox() = default;
 
 
 void FloatingToolbox::show(int x, int y) {
-    this->floatingToolboxX = x;
-    this->floatingToolboxY = y;
+    // (x, y) are in the gtk window's coordinates.
+    // However, we actually show the toolbox in the overlay's coordinate system.
+    gtk_widget_translate_coordinates(gtk_widget_get_toplevel(this->floatingToolbox), GTK_WIDGET(overlay.get()), x, y,
+                                     &floatingToolboxX, &floatingToolboxY);
+
     this->show();
 }
 
@@ -59,18 +65,18 @@ auto FloatingToolbox::floatingToolboxActivated() -> bool {
         cfg = settings->getButtonConfig(id);
 
         if (cfg->getAction() == TOOL_FLOATING_TOOLBOX) {
-            return true;  // return true
+            return true;
         }
     }
 
     // check if user can show Floating Menu with tap.
     if (settings->getDoActionOnStrokeFiltered() && settings->getStrokeFilterEnabled()) {
-        return true;  // return true
+        return true;
     }
 
     if (this->countWidgets() > 0)  // FloatingToolbox contains something
     {
-        return true;  // return true
+        return true;
     }
 
     return false;
@@ -93,9 +99,8 @@ auto FloatingToolbox::countWidgets() -> int {
 void FloatingToolbox::showForConfiguration() {
     if (this->floatingToolboxActivated())  // Do not show if not being used - at least while experimental.
     {
-        GtkWidget* boxContents = this->mainWindow->get("boxContents");
         gint wx = 0, wy = 0;
-        gtk_widget_translate_coordinates(boxContents, gtk_widget_get_toplevel(boxContents), 0, 0, &wx, &wy);
+        gtk_widget_translate_coordinates(this->boxContents, gtk_widget_get_toplevel(boxContents), 0, 0, &wx, &wy);
         this->floatingToolboxX = wx + 40;  // when configuration state these are
         this->floatingToolboxY = wy + 40;  // topleft coordinates( otherwise center).
         this->floatingToolboxState = configuration;
@@ -146,7 +151,7 @@ auto FloatingToolbox::getOverlayPosition(GtkOverlay* overlay, GtkWidget* widget,
         gtk_widget_get_allocation(widget, allocation);  // get existing width and height
 
         if (self->floatingToolboxState != noChange ||
-            allocation->height < 2)  // if recalcSize or configuration or  initiation.
+            allocation->height < 2)  // if recalcSize or configuration or initiation.
         {
             GtkRequisition natural;
             gtk_widget_get_preferred_size(widget, nullptr, &natural);
@@ -157,7 +162,7 @@ auto FloatingToolbox::getOverlayPosition(GtkOverlay* overlay, GtkWidget* widget,
         switch (self->floatingToolboxState) {
             case recalcSize:  // fallthrough 		note: recalc done above
             case noChange:
-                // show centered on x,y
+                // start centered on x,y
                 allocation->x = self->floatingToolboxX - allocation->width / 2;
                 allocation->y = self->floatingToolboxY - allocation->height / 2;
                 self->floatingToolboxState = noChange;
@@ -169,6 +174,37 @@ auto FloatingToolbox::getOverlayPosition(GtkOverlay* overlay, GtkWidget* widget,
                 allocation->width = std::max(allocation->width + 32, 50);  // always room for one more...
                 allocation->height = std::max(allocation->height, 50);
                 break;
+        }
+
+        // Ensure the floating toolbox stays within the window
+
+        GtkAllocation visibleRect;
+        gtk_widget_get_allocation(GTK_WIDGET(overlay), &visibleRect);
+
+        // Offscreen on left side?
+        const int leftBound = visibleRect.x;
+        if (allocation->x < leftBound) {
+            allocation->x = leftBound;
+        }
+
+        // Offscreen on top side?
+        const int topBound = visibleRect.y;
+        if (allocation->y < topBound) {
+            allocation->y = topBound;
+        }
+
+        // Offscreen on right side?
+        const int rightBound = visibleRect.width;
+        const int rightCurrent = allocation->x + allocation->width;
+        if (rightCurrent > rightBound) {
+            allocation->x -= rightCurrent - rightBound;
+        }
+
+        // Offscreen on bottom side?
+        const int bottomBound = visibleRect.height;
+        const int bottomCurrent = allocation->y + allocation->height;
+        if (bottomCurrent > bottomBound) {
+            allocation->y -= bottomCurrent - bottomBound;
         }
 
         return true;

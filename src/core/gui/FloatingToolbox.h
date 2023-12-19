@@ -16,6 +16,8 @@
 #include <glib.h>     // for gboolean
 #include <gtk/gtk.h>  // for GtkWidget, GtkOverlay
 
+#include "util/raii/GObjectSPtr.h"
+
 class MainWindow;
 
 enum FloatingToolBoxState { recalcSize = 0, configuration, noChange };
@@ -85,6 +87,12 @@ private:
 private:
     MainWindow* mainWindow;
     GtkWidget* floatingToolbox;
+
+    // The overlay that the toolbox should be displayed in.
+    xoj::util::GObjectSPtr<GtkOverlay> overlay;
+
+    // The widget which our floating toolbox must remain within.
+    GtkWidget* boxContents;
 
     /**
      * Communicating with getOverlayPosition callback
